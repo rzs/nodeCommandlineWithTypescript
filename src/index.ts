@@ -1,29 +1,46 @@
 #!/usr/bin/env ts-node
 'use strict';
 
-import util from 'util';
 import path from 'path';
 import minimist from 'minimist';
-import fs from 'fs';
-import getStdin from 'get-stdin';
+import fs, { ReadStream } from 'fs';
+import {parse, transform} from 'csv';
 
 const args = minimist(process.argv.slice(2), {boolean: ['help', 'in'],string: ['file']});
 
 if (args.help) {
   printHelp();
 } else if (args.in || args._.includes('-')) {
-  getStdin().then(processFile).catch(error);
+  processFile(process.stdin.read());
 } else if (args.file) {
-  fs.readFile(path.resolve(args.file), (err, contents) => {
-    if (err) {
-      error(err.toString());
-    } else {      
-      processFile(contents.toString());
-    }
-  });
+  processFile(fs.createReadStream(path.resolve(args.file)));
 } else {
   error('In-correct usage!\n');
   printHelp();
+}
+
+function processFile(readableStream: ReadStream) {
+  const records: any[] = [];
+  readableStream.on('end', () => {
+    fs.writeFileSync('./output.json', JSON.stringify(records, null, 2));
+  });
+  readableStream.pipe(parse({
+    delimiter: ';',
+    columns: [
+      'alpha2',
+      'alpha3',
+      'isoNum',
+      'da',
+      'en',
+      undefined,
+      undefined,
+      undefined,
+    ], 
+    skip_empty_lines: true,
+  })).pipe(transform((record: any) => {
+    records.push(record);
+  })
+  ).pipe(process.stdout).end; // not JSON.stringified
 }
 
 function printHelp() {
@@ -36,9 +53,6 @@ function printHelp() {
   console.log('');
 }
 
-function processFile(contents: string) {
-  process.stdout.write(contents);
-}
 
 function error(msg: string) {
   console.error(msg);
